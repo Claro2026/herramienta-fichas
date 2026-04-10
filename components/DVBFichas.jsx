@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import SAP_CATALOG from "@/lib/catalogo.json";
 
 /* ───────────────────────────────────────────────────────────────
    DVB — Herramienta de Fichas · Prototipo v3
@@ -104,31 +105,9 @@ const TREE = {
 const LEVEL_NAMES = ['PROGRAMA','PROYECTO','DOMINIO','DRIVER','SUB-DRIVER','CLUSTER','NIVEL CONSTR.','PROVEEDOR'];
 const GESTORES = [NM,AC,LC];
 
-const SAP_CATALOG = [
-  {code:'300001',desc:'Cable FO 12H ADSS',unit:'m',cat:'Materiales'},
-  {code:'300002',desc:'Cable FO 24H ADSS',unit:'m',cat:'Materiales'},
-  {code:'300003',desc:'Cable FO 48H ADSS',unit:'m',cat:'Materiales'},
-  {code:'300004',desc:'Cable FO 96H ADSS',unit:'m',cat:'Materiales'},
-  {code:'300010',desc:'Splitter 1:8',unit:'un',cat:'Materiales'},
-  {code:'300011',desc:'Splitter 1:16',unit:'un',cat:'Materiales'},
-  {code:'300012',desc:'Splitter 1:32',unit:'un',cat:'Materiales'},
-  {code:'300020',desc:'NAP 8 puertos',unit:'un',cat:'Materiales'},
-  {code:'300021',desc:'NAP 16 puertos',unit:'un',cat:'Materiales'},
-  {code:'300030',desc:'ODF 24 puertos',unit:'un',cat:'Materiales'},
-  {code:'300031',desc:'ODF 48 puertos',unit:'un',cat:'Materiales'},
-  {code:'300040',desc:'SFP+ 10G',unit:'un',cat:'Materiales'},
-  {code:'300041',desc:'SFP 1G',unit:'un',cat:'Materiales'},
-  {code:'400001',desc:'Tendido FO aérea',unit:'m',cat:'Mano de obra'},
-  {code:'400002',desc:'Tendido FO canalizada',unit:'m',cat:'Mano de obra'},
-  {code:'400003',desc:'Fusión de FO',unit:'un',cat:'Mano de obra'},
-  {code:'400004',desc:'Instalación de NAP',unit:'un',cat:'Mano de obra'},
-  {code:'400005',desc:'Instalación de ODF',unit:'un',cat:'Mano de obra'},
-  {code:'400010',desc:'Instalación de splitter',unit:'un',cat:'Mano de obra'},
-  {code:'500001',desc:'Licencia GPON OLT',unit:'un',cat:'Licencias y software'},
-  {code:'500002',desc:'Licencia XGSPON OLT',unit:'un',cat:'Licencias y software'},
-  {code:'500003',desc:'Licencia NMS gestión',unit:'un',cat:'Licencias y software'},
-];
-const CATEGORIAS = ['Mano de obra','Materiales','Licencias y software'];
+// Categoría mapping from Excel tipos
+const TIPO_TO_CAT = { 'Hardware': 'Hardware', 'Software / Licencia': 'Software', 'Mano de obra': 'Servicios' };
+const CATEGORIAS = ['Hardware','Software','Servicios'];
 
 // ── Helpers ──
 function isLeaf(n){return !n?.children||n.children.length===0;}
@@ -169,7 +148,7 @@ function Login({onLogin}){
             </div>
           );
         })}
-        <div style={{marginTop:20,padding:'10px 14px',background:'#FAFAFA',borderRadius:6,fontSize:10,color:C.g4,textAlign:'center'}}>Prototipo · Los datos se guardan en esta sesión</div>
+        <div style={{marginTop:20,padding:'10px 14px',background:'#FAFAFA',borderRadius:6,fontSize:10,color:C.g4,textAlign:'center'}}>Los datos se guardan en la base de datos</div>
       </div>
     </div>
   );
@@ -246,7 +225,7 @@ function TreeNav({gestor,path,onSelect,fichas}){
 }
 
 // ── BOM row ──
-const mkRow=()=>({id:Date.now()+Math.random(),categoria:'',codigoSAP:'',descripcion:'',unidad:'',cantidad:'',precioUnit:''});
+const mkRow=()=>({id:Date.now()+Math.random(),categoria:'',codigoSAP:'',descripcion:'',unidadMedida:'',cantidad:'',factor:'',valorP:''});
 
 // ── Ficha Form ──
 function FichaForm({nodeId,gestor,fichaData,onSave}){
@@ -256,30 +235,60 @@ function FichaForm({nodeId,gestor,fichaData,onSave}){
   const[saved,setSaved]=useState(false);
   const[sapDD,setSapDD]=useState({ri:null,fl:[]});
 
+  // Derive proyecto and driver from breadcrumb
+  const proyecto = bc.length>1 ? bc[1].name : '';
+  const driverTecnico = bc.length>2 ? bc[bc.length-1].name : node?.name || '';
+
   useEffect(()=>{setRows(fichaData?.rows||[mkRow(),mkRow(),mkRow()]);setSaved(false);},[nodeId]);
 
   const upd=(idx,f,v)=>{
     const n=[...rows];n[idx]={...n[idx],[f]:v};
     if(f==='codigoSAP'){
-      const m=SAP_CATALOG.find(s=>s.code===v);
-      if(m){n[idx].descripcion=m.desc;n[idx].unidad=m.unit;n[idx].categoria=m.cat;setSapDD({ri:null,fl:[]});}
-      else{setSapDD({ri:idx,fl:SAP_CATALOG.filter(s=>s.code.includes(v)||s.desc.toLowerCase().includes(v.toLowerCase())).slice(0,6)});}
+      const m=SAP_CATALOG.find(s=>s.codigoSAP===v);
+      if(m){
+        n[idx].descripcion=m.descripcionSAP;
+        n[idx].unidadMedida=m.umbSAP;
+        n[idx].categoria=TIPO_TO_CAT[m.tipo]||m.tipo;
+        n[idx].factor=String(m.ratio);
+        setSapDD({ri:null,fl:[]});
+      } else {
+        setSapDD({ri:idx,fl:SAP_CATALOG.filter(s=>
+          s.codigoSAP.includes(v)||s.descripcionSAP.toLowerCase().includes(v.toLowerCase())
+        ).slice(0,8)});
+      }
     }
     setRows(n);setSaved(false);
   };
 
   const pickSAP=(idx,s)=>{
-    const n=[...rows];n[idx]={...n[idx],codigoSAP:s.code,descripcion:s.desc,unidad:s.unit,categoria:s.cat};
+    const n=[...rows];
+    n[idx]={...n[idx],
+      codigoSAP:s.codigoSAP,
+      descripcion:s.descripcionSAP,
+      unidadMedida:s.umbSAP,
+      categoria:TIPO_TO_CAT[s.tipo]||s.tipo,
+      factor:String(s.ratio),
+    };
     setRows(n);setSapDD({ri:null,fl:[]});setSaved(false);
   };
 
-  const total=rows.reduce((s,r)=>(s+(parseFloat(r.cantidad)||0)*(parseFloat(r.precioUnit)||0)),0);
+  const total=rows.reduce((s,r)=>{
+    const q=parseFloat(r.cantidad)||0;
+    const f=parseFloat(r.factor)||0;
+    const p=parseFloat(r.valorP)||0;
+    return s+(q*f*p);
+  },0);
 
   if(!node)return null;
 
+  const hStyle={padding:'6px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:8,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:C.wh,background:C.g2};
+  const cellBase={padding:'6px 8px',fontSize:10,fontFamily:"'Barlow',sans-serif",display:'flex',alignItems:'center'};
+  const inputStyle={width:'100%',border:'none',background:'transparent',fontSize:10,fontFamily:"'Barlow',sans-serif",outline:'none',padding:'2px 0'};
+  const gridCols='100px 110px 90px 90px 1fr 70px 70px 70px 80px 80px 30px';
+
   return(
     <div style={{height:'100%',display:'flex',flexDirection:'column',fontFamily:"'Barlow',sans-serif"}}>
-      <div style={{background:C.dk,color:C.wh,padding:'16px 20px',borderBottom:`3px solid ${C.rd}`,flexShrink:0}}>
+      <div style={{background:C.dk,color:C.wh,padding:'14px 20px',borderBottom:`3px solid ${C.rd}`,flexShrink:0}}>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:8,fontWeight:700,letterSpacing:'.2em',textTransform:'uppercase',opacity:.5,marginBottom:4}}>FICHA DE DRIVER OPERATIVO</div>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:18,fontWeight:800}}>{node.name}</div>
         <div style={{fontSize:10,opacity:.5,marginTop:4,lineHeight:1.4}}>{bc.map(n=>n.name).join(' → ')}</div>
@@ -290,58 +299,101 @@ function FichaForm({nodeId,gestor,fichaData,onSave}){
         </div>
       </div>
 
-      <div style={{flex:1,overflowY:'auto',padding:'16px 16px 80px'}}>
+      <div style={{flex:1,overflowY:'auto',overflowX:'auto',padding:'16px 16px 80px'}}>
         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,letterSpacing:'.12em',textTransform:'uppercase',color:C.rd,marginBottom:10}}>Bill of Materials (BOM)</div>
 
-        <div style={{display:'grid',gridTemplateColumns:'130px 1fr 70px 80px 100px 100px 36px',gap:1,background:C.g2,borderRadius:'6px 6px 0 0',overflow:'hidden'}}>
-          {['Código SAP','Descripción','Unidad','Cantidad','Precio Unit.','Total',''].map((h,i)=>(
-            <div key={i} style={{padding:'8px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,letterSpacing:'.08em',textTransform:'uppercase',color:C.wh,background:C.g2}}>{h}</div>
-          ))}
-        </div>
+        <div style={{minWidth:950}}>
+          {/* Header */}
+          <div style={{display:'grid',gridTemplateColumns:gridCols,gap:1,background:C.g2,borderRadius:'6px 6px 0 0',overflow:'hidden'}}>
+            <div style={hStyle}>Proyecto</div>
+            <div style={hStyle}>Unid. Proy. Driver</div>
+            <div style={hStyle}>Categoría</div>
+            <div style={hStyle}>Código SAP</div>
+            <div style={hStyle}>Descripción</div>
+            <div style={hStyle}>Ud. Medida</div>
+            <div style={hStyle}>Cantidad Q</div>
+            <div style={hStyle}>Factor</div>
+            <div style={hStyle}>Valor P</div>
+            <div style={hStyle}>Total</div>
+            <div style={hStyle}></div>
+          </div>
 
-        {rows.map((row,idx)=>{
-          const rt=(parseFloat(row.cantidad)||0)*(parseFloat(row.precioUnit)||0);
-          return(
-            <div key={row.id} style={{position:'relative'}}>
-              <div style={{display:'grid',gridTemplateColumns:'130px 1fr 70px 80px 100px 100px 36px',gap:1,background:idx%2===0?'#FAFAFA':C.wh,borderLeft:`1px solid ${C.bd}`,borderRight:`1px solid ${C.bd}`,borderBottom:`1px solid ${C.bd}`}}>
-                <div style={{padding:'4px 6px',position:'relative'}}>
-                  <input value={row.codigoSAP} onChange={e=>upd(idx,'codigoSAP',e.target.value)}
-                    onFocus={()=>{if(!row.codigoSAP)setSapDD({ri:idx,fl:SAP_CATALOG.slice(0,6)});}}
-                    onBlur={()=>setTimeout(()=>setSapDD({ri:null,fl:[]}),200)}
-                    placeholder="Buscar..." style={{width:'100%',border:'none',background:'transparent',fontSize:11,fontFamily:"'Barlow',sans-serif",outline:'none',padding:'4px 0'}}/>
-                  {sapDD.ri===idx&&sapDD.fl.length>0&&(
-                    <div style={{position:'absolute',top:'100%',left:0,width:380,zIndex:100,background:C.wh,border:`1.5px solid ${C.rd}`,borderRadius:6,boxShadow:'0 8px 32px rgba(0,0,0,.15)',maxHeight:200,overflowY:'auto'}}>
-                      {sapDD.fl.map(s=>(
-                        <div key={s.code} onMouseDown={()=>pickSAP(idx,s)}
-                          style={{padding:'8px 10px',cursor:'pointer',borderBottom:`1px solid ${C.bd}`,fontSize:11,display:'flex',gap:8}}
-                          onMouseEnter={e=>e.currentTarget.style.background='#FFF5F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,color:C.rd,flexShrink:0,width:60}}>{s.code}</span>
-                          <span style={{color:C.g1,flex:1}}>{s.desc}</span>
-                          <span style={{color:C.g4,fontSize:9,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600}}>{s.cat}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+          {/* Rows */}
+          {rows.map((row,idx)=>{
+            const q=parseFloat(row.cantidad)||0;
+            const f=parseFloat(row.factor)||0;
+            const p=parseFloat(row.valorP)||0;
+            const rt=q*f*p;
+            const bg=idx%2===0?'#FAFAFA':C.wh;
+            const border={borderLeft:`1px solid ${C.bd}`,borderRight:`1px solid ${C.bd}`,borderBottom:`1px solid ${C.bd}`};
+            return(
+              <div key={row.id} style={{position:'relative'}}>
+                <div style={{display:'grid',gridTemplateColumns:gridCols,gap:1,background:bg,...border}}>
+                  {/* Proyecto - auto */}
+                  <div style={{...cellBase,background:'#F0F0F0',color:C.g2,fontSize:9,fontWeight:600}}>{proyecto}</div>
+                  {/* Driver Técnico - auto */}
+                  <div style={{...cellBase,background:'#F0F0F0',color:C.g2,fontSize:9,fontWeight:600}}>{driverTecnico}</div>
+                  {/* Categoría - dropdown */}
+                  <div style={{...cellBase,padding:'2px 4px'}}>
+                    <select value={row.categoria} onChange={e=>upd(idx,'categoria',e.target.value)}
+                      style={{width:'100%',border:'none',background:'transparent',fontSize:10,fontFamily:"'Barlow',sans-serif",outline:'none',cursor:'pointer',color:row.categoria?C.dk:C.g5}}>
+                      <option value="">—</option>
+                      {CATEGORIAS.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  {/* Código SAP - input with autocomplete */}
+                  <div style={{...cellBase,padding:'2px 6px',position:'relative'}}>
+                    <input value={row.codigoSAP} onChange={e=>upd(idx,'codigoSAP',e.target.value)}
+                      onFocus={()=>{if(!row.codigoSAP)setSapDD({ri:idx,fl:SAP_CATALOG.slice(0,8)});}}
+                      onBlur={()=>setTimeout(()=>setSapDD({ri:null,fl:[]}),200)}
+                      placeholder="Buscar..." style={inputStyle}/>
+                    {sapDD.ri===idx&&sapDD.fl.length>0&&(
+                      <div style={{position:'absolute',top:'100%',left:0,width:450,zIndex:100,background:C.wh,border:`1.5px solid ${C.rd}`,borderRadius:6,boxShadow:'0 8px 32px rgba(0,0,0,.15)',maxHeight:220,overflowY:'auto'}}>
+                        {sapDD.fl.map(s=>(
+                          <div key={s.codigoSAP+s.item} onMouseDown={()=>pickSAP(idx,s)}
+                            style={{padding:'6px 10px',cursor:'pointer',borderBottom:`1px solid ${C.bd}`,fontSize:10,display:'flex',gap:6,alignItems:'center'}}
+                            onMouseEnter={e=>e.currentTarget.style.background='#FFF5F4'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,color:C.rd,flexShrink:0,width:55}}>{s.codigoSAP}</span>
+                            <span style={{color:C.g1,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.descripcionSAP}</span>
+                            <span style={{color:C.g4,fontSize:8,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,flexShrink:0}}>{TIPO_TO_CAT[s.tipo]||s.tipo}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Descripción - auto */}
+                  <div style={{...cellBase,background:'#F0F0F0',color:row.descripcion?C.g1:C.g5,fontSize:9,fontStyle:row.descripcion?'normal':'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+                    title={row.descripcion}>{row.descripcion||'Auto con SAP'}</div>
+                  {/* Unidad de Medida - auto */}
+                  <div style={{...cellBase,background:'#F0F0F0',color:row.unidadMedida?C.g1:C.g5,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,justifyContent:'center',fontSize:9}}>{row.unidadMedida||'—'}</div>
+                  {/* Cantidad Q - input */}
+                  <div style={{...cellBase,padding:'2px 6px'}}>
+                    <input type="number" min="0" value={row.cantidad} onChange={e=>upd(idx,'cantidad',e.target.value)}
+                      placeholder="0" style={{...inputStyle,textAlign:'right'}}/>
+                  </div>
+                  {/* Factor - input with reference */}
+                  <div style={{...cellBase,padding:'2px 6px',background:row.factor?'#FFF8E1':'transparent'}}>
+                    <input type="number" min="0" step="any" value={row.factor} onChange={e=>upd(idx,'factor',e.target.value)}
+                      placeholder="—" style={{...inputStyle,textAlign:'right',color:C.g1}}/>
+                  </div>
+                  {/* Valor P - input */}
+                  <div style={{...cellBase,padding:'2px 6px'}}>
+                    <input type="number" min="0" value={row.valorP} onChange={e=>upd(idx,'valorP',e.target.value)}
+                      placeholder="$0" style={{...inputStyle,textAlign:'right'}}/>
+                  </div>
+                  {/* Total - calculated */}
+                  <div style={{...cellBase,background:'#F0F0F0',fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",justifyContent:'flex-end',fontSize:10,color:rt>0?C.dk:C.g5}}>
+                    {rt>0?`$${rt.toLocaleString()}`:'—'}
+                  </div>
+                  {/* Delete */}
+                  <div onClick={()=>{if(rows.length>1){setRows(rows.filter((_,i)=>i!==idx));setSaved(false);}}}
+                    style={{...cellBase,justifyContent:'center',cursor:rows.length>1?'pointer':'default',color:rows.length>1?C.g5:'transparent',fontSize:13}}
+                    onMouseEnter={e=>{if(rows.length>1)e.currentTarget.style.color=C.rd;}} onMouseLeave={e=>e.currentTarget.style.color=C.g5}>×</div>
                 </div>
-                <div style={{padding:'8px 10px',fontSize:11,color:row.descripcion?C.g1:C.g5,fontStyle:row.descripcion?'normal':'italic'}}>{row.descripcion||'Se autocompleta con SAP'}</div>
-                <div style={{padding:'8px 10px',fontSize:11,color:row.unidad?C.g1:C.g5,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,textAlign:'center'}}>{row.unidad||'—'}</div>
-                <div style={{padding:'4px 6px'}}>
-                  <input type="number" min="0" value={row.cantidad} onChange={e=>upd(idx,'cantidad',e.target.value)}
-                    placeholder="0" style={{width:'100%',border:'none',background:'transparent',fontSize:11,fontFamily:"'Barlow',sans-serif",outline:'none',padding:'4px 0',textAlign:'right'}}/>
-                </div>
-                <div style={{padding:'8px 10px',fontSize:11,color:C.g4,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,textAlign:'right',fontStyle:'italic',background:'#F9F9F9'}}>
-                  {row.precioUnit?`$${Number(row.precioUnit).toLocaleString()}`:'Compras'}
-                </div>
-                <div style={{padding:'8px 10px',fontSize:11,fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",textAlign:'right',color:rt>0?C.dk:C.g5}}>
-                  {rt>0?`$${rt.toLocaleString()}`:'—'}
-                </div>
-                <div onClick={()=>{if(rows.length>1){setRows(rows.filter((_,i)=>i!==idx));setSaved(false);}}}
-                  style={{display:'flex',alignItems:'center',justifyContent:'center',cursor:rows.length>1?'pointer':'default',color:rows.length>1?C.g5:'transparent',fontSize:14}}
-                  onMouseEnter={e=>{if(rows.length>1)e.currentTarget.style.color=C.rd;}} onMouseLeave={e=>e.currentTarget.style.color=C.g5}>×</div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
 
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,gap:12}}>
           <div onClick={()=>{setRows([...rows,mkRow()]);setSaved(false);}}
