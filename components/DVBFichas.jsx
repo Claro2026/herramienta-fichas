@@ -403,7 +403,7 @@ export default function DVBFichas(){
   // Save a ficha to Supabase (upsert)
   const saveFicha = useCallback(async (nodeId, fichaData) => {
     setFichas(p => ({ ...p, [nodeId]: fichaData }));
-    await supabase
+    const { error } = await supabase
       .from('fichas')
       .upsert({
         node_id: nodeId,
@@ -411,6 +411,8 @@ export default function DVBFichas(){
         rows: fichaData.rows,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'node_id,gestor' });
+    if (error) console.error('Supabase save error:', error);
+    else console.log('Ficha saved OK:', nodeId);
   }, [gestor]);
 
   const handleLogin = (g) => {
