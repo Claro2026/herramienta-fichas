@@ -366,21 +366,15 @@ function FichaForm({nodeId,gestor,fichaData,onSave}){
                     title={row.descripcion}>{row.descripcion||'Auto con SAP'}</div>
                   {/* Unidad de Medida - auto */}
                   <div style={{...cellBase,background:'#F0F0F0',color:row.unidadMedida?C.g1:C.g5,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,justifyContent:'center',fontSize:9}}>{row.unidadMedida||'—'}</div>
-                  {/* Cantidad Q - input */}
-                  <div style={{...cellBase,padding:'2px 6px'}}>
-                    <input type="number" min="0" value={row.cantidad} onChange={e=>upd(idx,'cantidad',e.target.value)}
-                      placeholder="0" style={{...inputStyle,textAlign:'right'}}/>
-                  </div>
+                  {/* Cantidad Q - placeholder only */}
+                  <div style={{...cellBase,background:'#F0F0F0',color:C.g5,fontSize:9,fontStyle:'italic',justifyContent:'center'}}>—</div>
                   {/* Factor - input with reference */}
                   <div style={{...cellBase,padding:'2px 6px',background:row.factor?'#FFF8E1':'transparent'}}>
                     <input type="number" min="0" step="any" value={row.factor} onChange={e=>upd(idx,'factor',e.target.value)}
                       placeholder="—" style={{...inputStyle,textAlign:'right',color:C.g1}}/>
                   </div>
-                  {/* Valor P - input */}
-                  <div style={{...cellBase,padding:'2px 6px'}}>
-                    <input type="number" min="0" value={row.valorP} onChange={e=>upd(idx,'valorP',e.target.value)}
-                      placeholder="$0" style={{...inputStyle,textAlign:'right'}}/>
-                  </div>
+                  {/* Valor P - placeholder only */}
+                  <div style={{...cellBase,background:'#F0F0F0',color:C.g5,fontSize:9,fontStyle:'italic',justifyContent:'center'}}>—</div>
                   {/* Total - calculated */}
                   <div style={{...cellBase,background:'#F0F0F0',fontWeight:700,fontFamily:"'Barlow Condensed',sans-serif",justifyContent:'flex-end',fontSize:10,color:rt>0?C.dk:C.g5}}>
                     {rt>0?`$${rt.toLocaleString()}`:'—'}
