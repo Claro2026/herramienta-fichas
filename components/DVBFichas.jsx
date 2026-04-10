@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
 
 /* ───────────────────────────────────────────────────────────────
    DVB — Herramienta de Fichas · Prototipo v3
@@ -382,6 +383,41 @@ export default function DVBFichas(){
   const[gestor,setGestor]=useState(null);
   const[path,setPath]=useState(['root']);
   const[fichas,setFichas]=useState({});
+  const[loading,setLoading]=useState(false);
+
+  // Load all fichas for this gestor from Supabase
+  const loadFichas = useCallback(async (g) => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('fichas')
+      .select('node_id, rows')
+      .eq('gestor', g);
+    if (!error && data) {
+      const map = {};
+      data.forEach(d => { map[d.node_id] = { rows: d.rows }; });
+      setFichas(map);
+    }
+    setLoading(false);
+  }, []);
+
+  // Save a ficha to Supabase (upsert)
+  const saveFicha = useCallback(async (nodeId, fichaData) => {
+    setFichas(p => ({ ...p, [nodeId]: fichaData }));
+    await supabase
+      .from('fichas')
+      .upsert({
+        node_id: nodeId,
+        gestor: gestor,
+        rows: fichaData.rows,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'node_id,gestor' });
+  }, [gestor]);
+
+  const handleLogin = (g) => {
+    setGestor(g);
+    setPath(['root']);
+    loadFichas(g);
+  };
 
   const cid=path[path.length-1];
   const cn=findNode(TREE,cid);
@@ -389,7 +425,7 @@ export default function DVBFichas(){
   const totalF=gestor?getLeaves(TREE,gestor).length:0;
   const filledF=gestor?getLeaves(TREE,gestor).filter(l=>fichas[l.id]).length:0;
 
-  if(!gestor) return <Login onLogin={g=>{setGestor(g);setPath(['root']);}}/>;
+  if(!gestor) return <Login onLogin={handleLogin}/>;
 
   return(
     <div style={{minHeight:'100vh',background:C.bg,fontFamily:"'Barlow',sans-serif",display:'flex',flexDirection:'column'}}>
@@ -417,7 +453,7 @@ export default function DVBFichas(){
         </div>
         <div style={{flex:1,minWidth:0,overflow:'hidden',display:'flex',flexDirection:'column'}}>
           {showForm?(
-            <FichaForm nodeId={cid} gestor={gestor} fichaData={fichas[cid]} onSave={(id,d)=>setFichas(p=>({...p,[id]:d}))}/>
+            <FichaForm nodeId={cid} gestor={gestor} fichaData={fichas[cid]} onSave={saveFicha}/>
           ):(
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12,color:C.g4}}>
               <div style={{fontSize:48,opacity:.15}}>📋</div>
