@@ -149,6 +149,11 @@ function Login({onLogin}){
           );
         })}
         <div style={{marginTop:20,padding:'10px 14px',background:'#FAFAFA',borderRadius:6,fontSize:10,color:C.g4,textAlign:'center'}}>Los datos se guardan en la base de datos</div>
+        <a href="/admin" style={{display:'block',marginTop:12,padding:'10px 14px',borderRadius:6,border:`1.5px solid ${C.bd}`,fontSize:11,color:C.g3,textAlign:'center',textDecoration:'none',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,cursor:'pointer',transition:'all .2s'}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.rd;e.currentTarget.style.color=C.rd;e.currentTarget.style.background='#FFF5F4';}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.bd;e.currentTarget.style.color=C.g3;e.currentTarget.style.background='transparent';}}>
+          Panel Administrador →
+        </a>
       </div>
     </div>
   );
